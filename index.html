@@ -1,1 +1,405 @@
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학생 출결 알리미 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Noto+Sans+KR:wght@100..900&display=swap');
+        body {
+            font-family: 'Noto Sans KR', 'Inter', sans-serif;
+            background-color: #f7f9fc;
+        }
+        .container-card {
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        }
+        .scrollable-table {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+
+<div class="min-h-screen p-4 sm:p-8 flex flex-col items-center">
+    <header class="w-full max-w-4xl text-center mb-6">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-blue-800 mb-2">학생 출결 알리미 시스템</h1>
+        <p id="app-status" class="text-sm text-gray-500 mb-4">데이터 로딩 중...</p>
+        
+        <div class="flex justify-center space-x-4 mb-6">
+            <button id="switch-student" class="px-4 py-2 rounded-lg font-semibold transition duration-200 bg-blue-500 text-white hover:bg-blue-600">
+                학생 모드 (신청하기)
+            </button>
+            <button id="switch-teacher" class="px-4 py-2 rounded-lg font-semibold transition duration-200 bg-gray-300 text-gray-800 hover:bg-gray-400">
+                교사 모드 (신청 현황 확인)
+            </button>
+        </div>
+    </header>
+
+    <!-- 1. 학생 신청 폼 -->
+    <div id="student-view" class="w-full max-w-md bg-white p-6 rounded-xl container-card hidden">
+        <h2 class="text-2xl font-bold mb-4 text-gray-700 border-b pb-2">출결 알리미 신청</h2>
+        <form id="attendance-form">
+            
+            <div class="mb-4">
+                <label for="studentId" class="block text-sm font-medium text-gray-600 mb-1">학번 (필수)</label>
+                <input type="text" id="studentId" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="예: 10101">
+            </div>
+
+            <div class="mb-4">
+                <label for="studentName" class="block text-sm font-medium text-gray-600 mb-1">이름 (필수)</label>
+                <input type="text" id="studentName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="예: 홍길동">
+            </div>
+
+            <div class="mb-4">
+                <label for="attendanceType" class="block text-sm font-medium text-gray-600 mb-1">신청 구분</label>
+                <select id="attendanceType" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <option value="결석">결석</option>
+                    <option value="지각">지각</option>
+                    <option value="조퇴">조퇴</option>
+                </select>
+            </div>
+
+            <div class="mb-6">
+                <label for="reason" class="block text-sm font-medium text-gray-600 mb-1">병명 또는 상세 사유 (필수)</label>
+                <textarea id="reason" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="예: 독감으로 인한 고열, 가정 사유"></textarea>
+                <p class="text-xs text-red-500 mt-1">교사는 여기에 입력된 '병명'을 포함한 사유를 확인합니다.</p>
+            </div>
+
+            <button type="submit" id="submit-btn" class="w-full bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition duration-200">
+                알리미 신청 제출
+            </button>
+            <p id="message-box" class="mt-4 text-center text-sm font-medium hidden"></p>
+        </form>
+    </div>
+
+    <!-- 2. 교사 현황 대시보드 -->
+    <div id="teacher-view" class="w-full max-w-4xl bg-white p-6 rounded-xl container-card hidden">
+        <h2 class="text-2xl font-bold mb-4 text-gray-700 border-b pb-2">교사 대시보드: 출결 신청 현황 (실시간)</h2>
+        
+        <div class="mb-4 flex justify-between items-center">
+            <div class="text-sm text-gray-500">총 신청 건수: <span id="total-count" class="font-bold text-gray-700">0</span>건</div>
+            <button id="filter-pending-btn" class="text-sm px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full hover:bg-yellow-200 transition duration-150">
+                미처리 건수만 보기
+            </button>
+        </div>
+
+        <div id="alerts-table-container" class="scrollable-table rounded-lg border border-gray-200">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50 sticky top-0">
+                    <tr>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]">No.</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%]">학번</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%]">이름</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]">구분</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[35%]">병명/사유</th>
+                        <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%]">상태</th>
+                    </tr>
+                </thead>
+                <tbody id="attendance-list" class="bg-white divide-y divide-gray-100">
+                    <!-- 데이터가 여기에 실시간으로 로드됩니다 -->
+                    <tr id="loading-row"><td colspan="6" class="p-4 text-center text-gray-500">신청 내역을 불러오는 중...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p id="no-data-msg" class="p-4 text-center text-gray-500 hidden">아직 제출된 신청이 없습니다.</p>
+    </div>
+
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, onSnapshot, collection, query, addDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Firestore 디버그 로깅 활성화
+    setLogLevel('Debug');
+
+    // =========================================================================
+    // 1. Firebase 설정 정보 삽입 (이 부분을 실제 값으로 변경해야 합니다!)
+    // =========================================================================
+    // Firebase 콘솔에서 복사한 사용자님의 웹 앱 설정 객체를 여기에 붙여넣으세요.
+    const firebaseConfig = {
+      apiKey: "[YOUR_API_KEY]", // 실제 API 키로 변경하세요
+      authDomain: "[YOUR_PROJECT_ID].firebaseapp.com",
+      projectId: "[YOUR_PROJECT_ID]", // 실제 프로젝트 ID로 변경하세요
+      storageBucket: "[YOUR_PROJECT_ID].appspot.com",
+      messagingSenderId: "[YOUR_MESSAGING_SENDER_ID]",
+      appId: "[YOUR_APP_ID]",
+      // measurementId: "G-XXXXXXXXXX" // (선택 사항)
+    };
+
+    // 공용 데이터 경로 설정을 위해 projectId를 앱 ID로 사용
+    const appId = firebaseConfig.projectId || 'default-attendance-app'; 
+    
+    let app;
+    let db;
+    let auth;
+    let userId = null;
+    let isAuthReady = false;
+    let showPendingOnly = false; // 필터 상태
+
+    const STATUS_MAP = {
+        'Pending': '승인 대기',
+        'Approved': '승인 완료',
+        'Rejected': '반려됨'
+    };
+    
+    // UI 요소
+    const studentView = document.getElementById('student-view');
+    const teacherView = document.getElementById('teacher-view');
+    const switchStudentBtn = document.getElementById('switch-student');
+    const switchTeacherBtn = document.getElementById('switch-teacher');
+    const appStatus = document.getElementById('app-status');
+    const attendanceForm = document.getElementById('attendance-form');
+    const messageBox = document.getElementById('message-box');
+    const attendanceListBody = document.getElementById('attendance-list');
+    const totalCountSpan = document.getElementById('total-count');
+    const noDataMsg = document.getElementById('no-data-msg');
+    const filterPendingBtn = document.getElementById('filter-pending-btn');
+
+    // 1. Firebase 초기화 및 인증
+    if (firebaseConfig.apiKey && firebaseConfig.projectId) { // 최소한의 유효성 검사
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                appStatus.textContent = `연결됨 (사용자 ID: ${userId})`;
+                isAuthReady = true;
+            } else {
+                appStatus.textContent = '인증 중...';
+                isAuthReady = false;
+                try {
+                    // 외부 환경에서는 CustomToken 대신 익명 로그인만 시도합니다. (가이드의 보안 규칙 참고)
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("인증 오류:", error);
+                    appStatus.textContent = `인증 실패: ${error.message}`;
+                }
+            }
+            // 초기 뷰 설정 (학생 모드)
+            switchView('student');
+        });
+    } else {
+        appStatus.textContent = '❌ Firebase 설정 정보를 찾을 수 없습니다. index.html의 firebaseConfig를 확인하세요.';
+    }
+
+    // 2. 뷰 전환 기능
+    function switchView(mode) {
+        if (!isAuthReady) {
+            console.error("인증이 완료되지 않았습니다.");
+            return;
+        }
+
+        studentView.classList.add('hidden');
+        teacherView.classList.add('hidden');
+        switchStudentBtn.classList.remove('bg-blue-500', 'text-white', 'bg-gray-300', 'text-gray-800');
+        switchTeacherBtn.classList.remove('bg-blue-500', 'text-white', 'bg-gray-300', 'text-gray-800');
+
+        if (mode === 'student') {
+            studentView.classList.remove('hidden');
+            switchStudentBtn.classList.add('bg-blue-500', 'text-white');
+            switchTeacherBtn.classList.add('bg-gray-300', 'text-gray-800');
+        } else if (mode === 'teacher') {
+            teacherView.classList.remove('hidden');
+            switchTeacherBtn.classList.add('bg-blue-500', 'text-white');
+            switchStudentBtn.classList.add('bg-gray-300', 'text-gray-800');
+            // 교사 모드 전환 시 데이터 리스너 재실행
+            setupRealtimeListener(); 
+        }
+    }
+
+    switchStudentBtn.addEventListener('click', () => switchView('student'));
+    switchTeacherBtn.addEventListener('click', () => switchView('teacher'));
+    
+    // 3. 학생: 신청서 제출 (Firestore 데이터 쓰기)
+    attendanceForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const studentId = document.getElementById('studentId').value.trim();
+        const studentName = document.getElementById('studentName').value.trim();
+        const attendanceType = document.getElementById('attendanceType').value;
+        const reason = document.getElementById('reason').value.trim();
+        const submitBtn = document.getElementById('submit-btn');
+
+        if (!studentId || !studentName || !reason) {
+            showMessage('모든 필수 항목을 입력해주세요.', 'text-red-500');
+            return;
+        }
+        
+        submitBtn.disabled = true;
+        showMessage('신청서를 제출 중입니다...', 'text-blue-500');
+
+        try {
+            // 경로: /artifacts/[YOUR_PROJECT_ID]/public/data/attendance_alerts
+            const path = `/artifacts/${appId}/public/data/attendance_alerts`;
+            await addDoc(collection(db, path), {
+                studentId: studentId,
+                studentName: studentName,
+                type: attendanceType,
+                reason: reason, // 교사가 확인할 핵심 정보: 병명/사유
+                status: 'Pending',
+                timestamp: serverTimestamp() 
+            });
+
+            showMessage('✅ 출결 알리미 신청이 성공적으로 제출되었습니다. 감사합니다!', 'text-green-600');
+            attendanceForm.reset(); // 폼 초기화
+        } catch (error) {
+            console.error("Firestore에 데이터 쓰기 오류:", error);
+            showMessage(`❌ 신청 제출 중 오류가 발생했습니다: ${error.message}`, 'text-red-600');
+        } finally {
+            submitBtn.disabled = false;
+            setTimeout(() => messageBox.classList.add('hidden'), 5000);
+        }
+    });
+
+    function showMessage(text, colorClass) {
+        messageBox.textContent = text;
+        messageBox.className = `mt-4 text-center text-sm font-medium ${colorClass}`;
+        messageBox.classList.remove('hidden');
+    }
+
+    // 4. 교사: 실시간 데이터 읽기 (Firestore onSnapshot)
+    let unsubscribe = null; // 실시간 리스너 해제를 위한 변수
+
+    function setupRealtimeListener() {
+        if (unsubscribe) {
+            unsubscribe(); // 기존 리스너 해제
+        }
+        
+        if (!isAuthReady) {
+            return;
+        }
+
+        // 경로: /artifacts/[YOUR_PROJECT_ID]/public/data/attendance_alerts
+        const path = `/artifacts/${appId}/public/data/attendance_alerts`;
+        const alertsCollection = collection(db, path);
+        // orderBy는 인덱스가 필요하므로, 간단한 쿼리 후 JS에서 정렬합니다.
+        const q = query(alertsCollection); 
+
+        // onSnapshot을 사용하여 실시간으로 데이터 변경 사항을 수신
+        unsubscribe = onSnapshot(q, (snapshot) => {
+            const alerts = [];
+            snapshot.forEach((doc) => {
+                alerts.push({ id: doc.id, ...doc.data() });
+            });
+
+            // 시간 역순으로 정렬 (가장 최근 신청이 상단에 오도록)
+            alerts.sort((a, b) => (b.timestamp?.toDate() || 0) - (a.timestamp?.toDate() || 0));
+
+            renderAttendanceList(alerts);
+        }, (error) => {
+            console.error("Firestore 실시간 리스너 오류:", error);
+            attendanceListBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">데이터 로딩 실패: ${error.message}</td></tr>`;
+        });
+    }
+
+    // 5. 교사: 신청 목록 렌더링
+    function renderAttendanceList(alerts) {
+        attendanceListBody.innerHTML = '';
+        
+        const filteredAlerts = alerts.filter(alert => 
+            !showPendingOnly || alert.status === 'Pending'
+        );
+
+        totalCountSpan.textContent = alerts.length;
+        
+        if (filteredAlerts.length === 0) {
+            noDataMsg.classList.remove('hidden');
+            document.getElementById('loading-row')?.remove(); // 로딩 행 제거
+            return;
+        }
+
+        noDataMsg.classList.add('hidden');
+        document.getElementById('loading-row')?.remove();
+
+        filteredAlerts.forEach((alert, index) => {
+            const statusColor = {
+                'Pending': 'bg-yellow-100 text-yellow-800',
+                'Approved': 'bg-green-100 text-green-800',
+                'Rejected': 'bg-red-100 text-red-800',
+            }[alert.status] || 'bg-gray-100 text-gray-800';
+
+            const statusText = STATUS_MAP[alert.status] || '알 수 없음';
+            const displayIndex = alerts.length - index;
+
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-gray-50';
+            row.innerHTML = `
+                <td class="px-3 py-3 text-sm font-medium text-gray-900">${displayIndex}</td>
+                <td class="px-3 py-3 text-sm text-gray-700 font-semibold">${alert.studentId}</td>
+                <td class="px-3 py-3 text-sm text-gray-700">${alert.studentName}</td>
+                <td class="px-3 py-3 text-sm text-gray-500">${alert.type}</td>
+                <td class="px-3 py-3 text-sm text-gray-900 break-words max-w-xs">${alert.reason}</td>
+                <td class="px-3 py-3 whitespace-nowrap text-center">
+                    <span id="status-${alert.id}" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">
+                        ${statusText}
+                    </span>
+                    <div class="mt-2 space-x-1 flex justify-center" id="action-btns-${alert.id}">
+                        <button data-id="${alert.id}" data-action="Approved" class="action-btn px-2 py-1 text-xs text-white bg-green-500 rounded hover:bg-green-600 transition">승인</button>
+                        <button data-id="${alert.id}" data-action="Rejected" class="action-btn px-2 py-1 text-xs text-white bg-red-500 rounded hover:bg-red-600 transition">반려</button>
+                    </div>
+                </td>
+            `;
+            attendanceListBody.appendChild(row);
+            
+            // 처리 완료된 항목은 버튼 숨기기
+            if (alert.status !== 'Pending') {
+                document.getElementById(`action-btns-${alert.id}`).classList.add('hidden');
+            }
+        });
+
+        // 6. 교사: 승인/반려 버튼 이벤트 리스너
+        document.querySelectorAll('.action-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const docId = e.target.dataset.id;
+                const newStatus = e.target.dataset.action;
+                
+                // 간단한 모달 대체
+                // 경고: alert/confirm 대신 커스텀 모달 UI를 사용해야 합니다.
+                const isConfirmed = window.confirm(`${STATUS_MAP[newStatus]}으로 처리하시겠습니까?`);
+                if (!isConfirmed) return;
+
+                try {
+                    const docRef = doc(db, `/artifacts/${appId}/public/data/attendance_alerts`, docId);
+                    await updateDoc(docRef, { status: newStatus });
+                    // 버튼을 숨기거나 비활성화 (onSnapshot에서 자동 업데이트되지만 UX를 위해)
+                    e.target.parentElement.classList.add('hidden'); 
+                    alert('처리가 완료되었습니다.'); // 처리 완료 알림
+                } catch (error) {
+                    console.error("상태 업데이트 오류:", error);
+                    alert(`상태 업데이트 실패: ${error.message}`);
+                }
+            });
+        });
+    }
+    
+    // 7. 교사: 미처리 필터링 토글
+    filterPendingBtn.addEventListener('click', () => {
+        showPendingOnly = !showPendingOnly;
+        if (showPendingOnly) {
+            filterPendingBtn.textContent = '전체 목록 보기';
+            filterPendingBtn.classList.replace('bg-yellow-100', 'bg-blue-100');
+            filterPendingBtn.classList.replace('text-yellow-800', 'text-blue-800');
+        } else {
+            filterPendingBtn.textContent = '미처리 건수만 보기';
+            filterPendingBtn.classList.replace('bg-blue-100', 'bg-yellow-100');
+            filterPendingBtn.classList.replace('text-blue-800', 'text-yellow-800');
+        }
+        // 리스너가 받은 기존 데이터를 필터링하여 다시 렌더링
+        if (typeof renderAttendanceList === 'function' && attendanceListBody.children.length > 0) {
+            // onSnapshot이 이미 데이터를 가지고 있으므로, 전체 데이터를 다시 필터링하여 렌더링만 수행
+            setupRealtimeListener(); 
+        }
+    });
+
+</script>
+</body>
+</html>
